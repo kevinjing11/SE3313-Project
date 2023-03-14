@@ -31,13 +31,14 @@ typedef enum {
 //Game Instance definition
 typedef struct game_instance {
     int id;
-    int player1_sock;
-    int player2_sock;
+    player_data_t players[MAX_PLAYERS];
+    int num_players;
+    bool game_over;
+    char board[BOARD_SIZE][BOARD_SIZE];
+    int current_player;
+    pthread_t thread;
     struct game_instance *next;
 } game_instance_t;
-
-game_instance_t *game_instance_list = NULL;
-int game_instance_counter = 0;
 
 // Global variables
 game_instance_t *games_list = NULL;
@@ -120,8 +121,10 @@ game_status_t check_game_status(char board[3][3]) {
 game_instance_t *create_game_instance(int player1_sock) {
     game_instance_t *new_game_instance = (game_instance_t *)malloc(sizeof(game_instance_t));
     new_game_instance->id = game_instance_counter++;
-    new_game_instance->player1_sock = player1_sock;
-    new_game_instance->player2_sock = -1;
+    new_game_instance->num_players = 0;
+    new_game_instance->game_over = false;
+    memset(new_game_instance->board, ' ', sizeof(new_game_instance->board));
+    new_game_instance->current_player = 0;
     new_game_instance->next = game_instance_list;
     game_instance_list = new_game_instance;
     return new_game_instance;
@@ -218,11 +221,19 @@ void *handle_client(void *data) {
     close(client_sock);
     free(player_data);
     return NULL;
+
+    if (player_data->game_id >= 0) {
+    game_instance_t *game = find_game_instance(player_data->game_id);
+    if (game->num_players == MAX_PLAYERS) {
+        pthread_create(&game->thread, NULL, handle_game_instance, &game);
+    }
+    break;
+}
 }
 
 //Handle comms w clients and game state management
 void *handle_game_instance(void *game_data) {
-    game_instance_t *game = (game_instance_t *)game_data;
+   game_instance_t *game = *((game_instance_t **)game_data);
 
     // Initialize the game state
     char board[3][3] = {
